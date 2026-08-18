@@ -15,7 +15,7 @@ class Catch(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     species: Mapped[str] = mapped_column(String(50), nullable=False)
-    weight: Mapped[float] = mapped_column(Double(53), nullable=False)
-    length: Mapped[float] = mapped_column(Double(53), nullable=False)
+    weight: Mapped[float] = mapped_column(Double(53), nullable=True)
+    length: Mapped[float] = mapped_column(Double(53), nullable=True)
     location: Mapped[str] = mapped_column(String(100), nullable=False)
     date_caught: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
