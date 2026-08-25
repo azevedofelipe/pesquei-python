@@ -1,5 +1,17 @@
 # Pesquei Backend Roadmap
 
+## Useful commands to remember
+
+- Update models.py with sqlacodegen pulling from DB
+´sqlacodegen postgresql://postgres:password@localhost:5432/pesquei > models.py´
+
+- Create a new alembic revision and then upgrade head
+´alembic revision -m "Message"´
+´alembic upgrade head´
+
+- Start fastapi dev server
+´fastapi dev main.py´
+
 ## Goal
 Build a production-style backend while learning technologies in the order they become useful.
 
