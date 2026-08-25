@@ -4,18 +4,27 @@ from pydantic import BaseModel
 
 
 class CatchCreate(BaseModel):
-    species: str
+    date_caught: datetime = datetime.now()
+    species: str | None = None
     weight: float | None = None
     length: float | None = None
-    location: str
-    date_caught: datetime
+    latitude: float | None = None
+    longitude: float | None = None
+    lure_id: int | None = None
+    depth: float | None = None
+    notes: str | None = None
+
 
 class CatchResponse(BaseModel):
     id: int
-    species: str
+    species: str | None
     weight: float | None
     length: float | None
-    location: str
+    latitude: float | None
+    longitude: float | None
     date_caught: datetime
+    lure_id: int | None
+    depth: float | None
+    notes: str | None
 
     model_config = {"from_attributes": True}
