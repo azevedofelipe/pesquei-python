@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Catch
-from schemas import CatchCreate, CatchResponse
+from schemas.catch import CatchCreate, CatchResponse
 
 router = APIRouter(
     prefix="/catch",
