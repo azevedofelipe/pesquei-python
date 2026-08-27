@@ -3,7 +3,7 @@
 ## Useful commands to remember
 
 - Update models.py with sqlacodegen pulling from DB
-´sqlacodegen postgresql://postgres:password@localhost:5432/pesquei > models.py´
+´sqlacodegen postgresql://postgres:password@localhost:5432/pesquei | Out-File -Encoding utf8 models.py´
 
 - Create a new alembic revision and then upgrade head
 ´alembic revision -m "Message"´

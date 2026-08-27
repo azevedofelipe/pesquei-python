@@ -2,7 +2,7 @@
 import datetime
 import decimal
 
-from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, Numeric, PrimaryKeyConstraint, String, Text
+from sqlalchemy import DateTime, ForeignKeyConstraint, Integer, Numeric, PrimaryKeyConstraint, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -25,6 +25,21 @@ class Lure(Base):
     size: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
 
     catch: Mapped[list['Catch']] = relationship('Catch', back_populates='lure')
+
+
+class User(Base):
+    __tablename__ = 'user'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='user_pkey'),
+        UniqueConstraint('email', name='user_email_key'),
+        UniqueConstraint('username', name='user_username_key')
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(50), nullable=False)
+    email: Mapped[str] = mapped_column(String(100), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
 
 
 class Catch(Base):
