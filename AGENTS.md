@@ -21,8 +21,16 @@ current.
 
 ## Policy: tests and CI are mandatory
 
-- **Every new endpoint or model change must ship with tests in the same PR.**
-  `tests/conftest.py` already provides everything needed — `client`,
+- **Any agent that adds a new table, a new endpoint, or changes an existing
+  model must do two things in the same PR: (1) write new pytest tests
+  covering what it added, and (2) make sure every existing test still
+  passes.** Both, not either — new tests alone aren't enough if you broke
+  something that was already covered, and a clean existing suite isn't
+  enough if the new feature has zero coverage. New table → new
+  `tests/test_<table>.py` (or additions to an existing one if it extends a
+  table that already has a file). New endpoint on an existing table → add
+  cases to that table's existing test file, don't create a parallel one.
+- `tests/conftest.py` already provides everything needed — `client`,
   `db_session`, and a `make_user` factory fixture that creates a throwaway
   user via the real `/auth/register`+`/auth/login` flow and cleans up after
   itself (including that user's catches/lures, in FK-safe order). Use it
