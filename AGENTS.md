@@ -19,6 +19,35 @@ current.
 - For what's built / what's next, see `Pesquei_Backend_Roadmap.md` — this
   file is for *how* to work in this codebase, not the feature roadmap.
 
+## Policy: tests and CI are mandatory
+
+- **Every new endpoint or model change must ship with tests in the same PR.**
+  `tests/conftest.py` already provides everything needed — `client`,
+  `db_session`, and a `make_user` factory fixture that creates a throwaway
+  user via the real `/auth/register`+`/auth/login` flow and cleans up after
+  itself (including that user's catches/lures, in FK-safe order). Use it
+  instead of hand-rolling setup/teardown. Don't add new top-level fixtures to
+  `conftest.py` without a good reason — it's shared by every test file, so an
+  incompatible change there breaks everyone at once.
+- Tests run against a dedicated `pesquei_test` Postgres database (see
+  `conftest.py`'s `TEST_DATABASE_URL` — it's the real `DATABASE_URL` with the
+  db name swapped), never the real dev database. Assertions should verify
+  persistence via `db_session` (a fresh, independent session/query), not just
+  trust the API's JSON response — that's the whole point of an integration
+  test here.
+- **CI (`.github/workflows/ci.yml`) runs the full `pytest` suite against a
+  real ephemeral Postgres service container on every PR and every push to
+  `main`.** It must be green before a PR is merged — this is enforced as a
+  required status check on `main` (branch protection), not just a suggestion.
+  If you add a dependency the app needs at runtime, update **both**
+  `pyproject.toml` and the `pip install` step in `ci.yml` — there's no
+  packaging/build-system set up yet (see Known issues), so CI installs an
+  explicit list rather than `pip install .`, and the two lists can drift if
+  you only update one.
+- Before opening/updating a PR: run `venv/Scripts/python.exe -m pytest -v`
+  locally yourself. Don't rely on CI to be your first signal that something
+  broke — CI is the backstop, not the primary check.
+
 ## Project quick facts
 
 - FastAPI + SQLAlchemy 2.0 (pinned `<2.1`, see Known issues) + Alembic +
@@ -75,6 +104,17 @@ current.
 - **Pin sqlalchemy `<2.1`** — 2.1.x changes default driver resolution for a
   bare `postgresql://` URL in a way that breaks this project's psycopg2
   setup.
+- `ci.yml`'s dependency install list and `pyproject.toml`'s dependency list
+  are two separate, manually-kept-in-sync lists (no `[build-system]`/`pip
+  install .` set up yet, since the repo isn't laid out as an installable
+  package). Update both when adding a runtime dependency, or CI will pass
+  locally-installed code that doesn't actually match what CI tested.
+- `POST /lure/` and `POST /catch/` have no `response_model` and no explicit
+  `status_code` — they return a bare `200` with whatever the SQLAlchemy
+  object serializes to, unlike `POST /auth/register` which declares
+  `response_model=UserResponse, status_code=201`. Found independently by two
+  agents while writing tests 2026-09-28; functionally harmless (tests
+  accept 200) but worth cleaning up for consistency at some point.
 
 ## Decisions
 
@@ -87,6 +127,26 @@ current.
 ## Log
 
 <!-- Newest entries at the top. Format: `- YYYY-MM-DD: <what happened/learned, why it matters>` -->
+- 2026-09-28: **Added the first test suite (35 tests) and CI.** Built
+  `tests/conftest.py` centrally first (dedicated `pesquei_test` Postgres db,
+  `client`/`db_session`/`make_user` fixtures) rather than letting three
+  parallel agents each invent their own scaffolding — shared test
+  infrastructure is exactly the kind of thing that shouldn't be duplicated
+  three times. Then ran three agents in parallel, one per table
+  (`test_user.py` 10 tests, `test_lure.py` 12, `test_catch.py` 13), each only
+  touching its own file. All 35 pass together. Added
+  `.github/workflows/ci.yml`: spins up a real ephemeral Postgres service
+  container and runs the full suite on every PR/push to `main`, set as a
+  required status check via branch protection. Landed as more commits on the
+  already-open PR for the catch/lure CRUD + users router work, since those
+  are the endpoints being tested and hadn't merged yet.
+
+## Testing
+
+- Run the full suite locally: `venv/Scripts/python.exe -m pytest -v` (or
+  just `pytest -v` if the venv's `Scripts` dir is on `PATH`).
+- Run one table's tests: `pytest tests/test_lure.py -v`.
+- See `tests/conftest.py` for the fixtures every test file should build on.
 - 2026-09-28: **Discovered and merged an unmerged auth branch that predated
   today's work.** Two agents built catch/lure CRUD roundout + a users router
   on `main`, unaware that a branch `azevedofelipe/link-records-to-user` (3

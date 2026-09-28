@@ -85,10 +85,12 @@ that reconciliation involved.*
 
 ## 8. Testing
 
-- [ ] pytest + FastAPI `TestClient` setup, test DB fixture
-- [ ] Endpoint tests for everything built in steps 2-6 before adding much
-      more surface area
-- [ ] Auth flow tests
+- [x] pytest + FastAPI `TestClient` setup, test DB fixture (`tests/conftest.py`,
+      dedicated `pesquei_test` Postgres database, `make_user` fixture)
+- [x] Endpoint tests for everything built in steps 2-6 — 35 tests across
+      `test_user.py`/`test_lure.py`/`test_catch.py`, covering CRUD, auth
+      requirements, and cross-user ownership isolation
+- [x] Auth flow tests (register/login success + failure paths)
 
 *Why here, not earlier: there's enough surface area now to make tests worth
 writing, and doing it before Redis/Celery/Docker means those get built
@@ -118,7 +120,10 @@ RabbitMQ) stabilizes just means rewriting the compose file repeatedly.*
 
 ## 12. CI/CD
 
-- [ ] GitHub Actions: lint + typecheck + test on every PR
+- [x] GitHub Actions: test on every PR (`.github/workflows/ci.yml`, real
+      Postgres service container) — required status check on `main`
+- [ ] Add lint + typecheck to the same workflow once Ruff/Pyright are
+      configured (step 1)
 - [ ] Deploy to Railway
 - [ ] Later: AWS
 

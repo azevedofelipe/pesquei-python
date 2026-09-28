@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pesquei_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      # Ephemeral CI-only database, never a real credential.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pesquei_test
+      # Ephemeral CI-only JWT signing key, never a real secret.
+      SECRET_KEY: ci-only-secret-key-not-used-anywhere-else
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            "fastapi[standard]>=0.115" \
+            "sqlalchemy>=2.0,<2.1" \
+            "alembic>=1.13" \
+            "psycopg2-binary>=2.9" \
+            "python-dotenv>=1.0" \
+            "pydantic>=2.0" \
+            "bcrypt>=4.1" \
+            "pyjwt>=2.9" \
+            "python-multipart>=0.0.9" \
+            "pytest>=8.0"
+
+      - name: Run tests
+        run: pytest -v
