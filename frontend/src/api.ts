@@ -89,12 +89,18 @@ export interface Lure {
   id: number;
   user_id: number;
   name: string | null;
-  weight: number | null;
+  // weight/size are typed `Decimal` in the backend's LureResponse, which
+  // Pydantic v2 serializes as a JSON string (e.g. "10.50") on GET — but
+  // POST /lure/ has no response_model and returns the raw ORM object, where
+  // the same field comes back as a JSON number. Typed as the union of both
+  // rather than picking one, since which you get depends on which endpoint
+  // responded. Don't do arithmetic on these without a Number(...) first.
+  weight: number | string | null;
   type: string | null;
   color: string | null;
   brand: string | null;
   model: string | null;
-  size: number | null;
+  size: number | string | null;
 }
 
 export interface LureCreate {
