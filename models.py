@@ -1,4 +1,4 @@
-﻿from typing import Optional
+from typing import Optional
 import datetime
 import decimal
 
@@ -7,24 +7,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     pass
-
-
-class Lure(Base):
-    __tablename__ = 'lure'
-    __table_args__ = (
-        PrimaryKeyConstraint('id', name='lure_pkey'),
-    )
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[Optional[str]] = mapped_column(String(50))
-    weight: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
-    type: Mapped[Optional[str]] = mapped_column(String(50))
-    color: Mapped[Optional[str]] = mapped_column(String(100))
-    brand: Mapped[Optional[str]] = mapped_column(String(100))
-    model: Mapped[Optional[str]] = mapped_column(String(100))
-    size: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
-
-    catch: Mapped[list['Catch']] = relationship('Catch', back_populates='lure')
 
 
 class User(Base):
@@ -41,16 +23,42 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
 
+    lure: Mapped[list['Lure']] = relationship('Lure', back_populates='user')
+    catch: Mapped[list['Catch']] = relationship('Catch', back_populates='user')
+
+
+class Lure(Base):
+    __tablename__ = 'lure'
+    __table_args__ = (
+        ForeignKeyConstraint(['user_id'], ['user.id'], name='lure_user_id_fkey'),
+        PrimaryKeyConstraint('id', name='lure_pkey')
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String(50))
+    weight: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
+    type: Mapped[Optional[str]] = mapped_column(String(50))
+    color: Mapped[Optional[str]] = mapped_column(String(100))
+    brand: Mapped[Optional[str]] = mapped_column(String(100))
+    model: Mapped[Optional[str]] = mapped_column(String(100))
+    size: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
+
+    user: Mapped['User'] = relationship('User', back_populates='lure')
+    catch: Mapped[list['Catch']] = relationship('Catch', back_populates='lure')
+
 
 class Catch(Base):
     __tablename__ = 'catch'
     __table_args__ = (
         ForeignKeyConstraint(['lure_id'], ['lure.id'], name='catch_lure_id_fkey'),
+        ForeignKeyConstraint(['user_id'], ['user.id'], name='catch_user_id_fkey'),
         PrimaryKeyConstraint('id', name='catch_pkey')
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date_caught: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     species: Mapped[Optional[str]] = mapped_column(String(50))
     weight: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
     length: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
@@ -61,3 +69,4 @@ class Catch(Base):
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
     lure: Mapped[Optional['Lure']] = relationship('Lure', back_populates='catch')
+    user: Mapped['User'] = relationship('User', back_populates='catch')

@@ -17,6 +17,7 @@ class CatchCreate(BaseModel):
 
 class CatchResponse(BaseModel):
     id: int
+    user_id: int
     species: str | None
     weight: float | None
     length: float | None
