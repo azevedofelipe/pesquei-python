@@ -131,25 +131,31 @@ frontend-only change — good to land and verify independently first.*
 
 ## 10. External APIs
 
-- [ ] Shared `httpx` async client wrapper (`clients/` or similar — a single
+- [x] Shared `httpx` async client wrapper (`clients/http.py` — a single
       place for base URL, timeout, and retry config per external API)
-- [ ] Open-Meteo weather lookup (free, no API key — good first integration)
-- [ ] Sunrise/sunset lookup
-- [ ] Tide API for the target region (likely needs an API key — NOAA
-      CO-OPS is free for US coastal regions if that's the target area,
-      otherwise research alternatives)
-- [ ] Store a weather snapshot on `Catch` at creation time — new columns
-      (e.g. `temperature`, `conditions`, `sunrise`, `sunset`, `tide_state`)
-      + migration. Decide: fetch synchronously in `POST /catch/` (simplest,
-      adds latency to catch creation and a failure mode if the external API
-      is down) vs. fire-and-forget/background (needs step 14's job queue —
-      probably premature before that exists). Default to synchronous first;
-      revisit if it's noticeably slow or flaky in practice.
-- [ ] Research: async/await patterns in FastAPI route handlers, timezones
-      (ties into step 8's date fix), rate limiting, retries/backoff
+- [x] Open-Meteo weather lookup (free, no API key — good first integration).
+      `clients/open_meteo.py`, using both `api.open-meteo.com/v1/forecast`
+      (recent/near-future dates) and `archive-api.open-meteo.com/v1/archive`
+      (older dates), whichever the date needs.
+- [x] Sunrise/sunset lookup — confirmed one Open-Meteo call's `daily` block
+      covers this too, no separate API needed (see AGENTS.md log entry).
+- [ ] Tide API for the target region — **deliberately deferred, not
+      forgotten**. No genuinely free, no-paid-tier-risk tide API could be
+      confirmed for a region this app is actually targeting (NOAA CO-OPS is
+      free but US-coastal-only). See AGENTS.md's 2026-09-28 log entry.
+- [x] Store a weather snapshot on `Catch` at creation time — new nullable
+      columns `temperature`/`conditions`/`sunrise`/`sunset` (no `tide_state`,
+      see above) + migration `0b19934327fb_add_weather_snapshot_columns_to_catch.py`.
+      Fetched synchronously in `POST /catch/` (now `async def`), never blocks
+      catch creation on lookup failure (logs a warning, leaves fields null).
+- [x] Research: async/await patterns in FastAPI route handlers, timezones,
+      retries/backoff — `POST /catch/` awaits the lookup directly; retries are
+      connection-level only via `clients/http.py`'s `httpx.AsyncHTTPTransport(retries=...)`,
+      deliberately not retrying on 4xx/5xx to avoid hammering a bad request.
 - [ ] Tests: mock the external HTTP calls (e.g. `httpx`'s `MockTransport` or
       monkeypatching) rather than hitting real APIs in CI — real network
-      calls in a CI run are slow, flaky, and can hit rate limits
+      calls in a CI run are slow, flaky, and can hit rate limits. Not written
+      yet (qa-tester's job, not backend-dev's) — flagged in the handoff report.
 
 *Depends on step 9 (needs real coordinates to query) and benefits from step 8
 being done first (accurate, timezone-correct `date_caught` to query weather

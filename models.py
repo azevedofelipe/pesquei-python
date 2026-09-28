@@ -67,6 +67,10 @@ class Catch(Base):
     lure_id: Mapped[Optional[int]] = mapped_column(Integer)
     depth: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    temperature: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(5, 2))
+    conditions: Mapped[Optional[str]] = mapped_column(String(100))
+    sunrise: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    sunset: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
 
     lure: Mapped[Optional['Lure']] = relationship('Lure', back_populates='catch')
     user: Mapped['User'] = relationship('User', back_populates='catch')

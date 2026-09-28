@@ -241,6 +241,45 @@ reusable instead of re-deriving each session.
   ready to apply, but landing them on `pesquei` (vs. just `pesquei_test`)
   was left for whoever next runs the app against the real dev DB, per this
   task's "never touch the real dev database" boundary.
+- 2026-09-28: **Phase 6 / STEPS.md step 10: Open-Meteo weather + sunrise/sunset
+  snapshot on `Catch`, tide deliberately skipped.** Added `clients/http.py`
+  (shared `httpx.AsyncClient` factory: base URL, timeout, connection-retry
+  config in one place) and `clients/open_meteo.py`. Confirmed directly
+  against the live API (not just docs) that a single Open-Meteo call
+  requesting both `hourly=temperature_2m,weathercode` and `daily=sunrise,sunset`
+  returns everything needed — no separate sunrise/sunset API required, matching
+  the roadmap's guess. Two Open-Meteo endpoints are used: `api.open-meteo.com/v1/forecast`
+  (recent past ~90 days / near-future) and `archive-api.open-meteo.com/v1/archive`
+  (older dates the forecast endpoint 400s on) — the client tries forecast
+  first and falls back to archive automatically. Both are free, unauthenticated,
+  no paid tier, confirmed by hitting them directly.
+  **Tide was deliberately skipped, not forgotten**: the only genuinely free,
+  no-API-key tide API found is NOAA CO-OPS, which only covers US NOAA
+  stations — nothing in this codebase indicates the app's target region is
+  US coastal waters, and no other tide API could be confirmed free with no
+  paid-tier risk. Per explicit instruction, integrating something with cost
+  risk was worse than shipping without tide, so `Catch` has no `tide_state`
+  column. Revisit once the target region is confirmed and/or a confirmed-free
+  tide source for it is found.
+  `POST /catch/` is now `async def` and awaits the weather lookup
+  synchronously (per the roadmap's stated default) using whatever
+  `latitude`/`longitude`/`date_caught` the request already has; skips the
+  lookup entirely (no external call at all) if either coordinate is missing;
+  and never blocks catch creation on lookup failure — `get_weather_snapshot()`
+  catches its own `httpx` errors, logs a warning, and returns `None`, leaving
+  the four new columns null. New nullable `Catch` columns: `temperature`
+  (`Numeric(5,2)`, same convention as `weight`/`length`), `conditions`
+  (`String(100)`, a label derived from Open-Meteo's WMO `weathercode`),
+  `sunrise`/`sunset` (naive `DateTime`, matching `date_caught`'s existing
+  naive-datetime convention rather than fixing that separately-tracked bug).
+  Migration `0b19934327fb_add_weather_snapshot_columns_to_catch.py`, applied
+  and curl-verified against `pesquei_test` only — **not applied to the real
+  dev DB** (a concurrent worktree may also be migrating it; left for
+  release-manager/whoever merges first to run `alembic upgrade head` there,
+  resolving any two-heads conflict if another concurrent migration also
+  branched from `e25a6a259344`). Added `httpx` explicitly to `pyproject.toml`
+  and `ci.yml` (it was already an indirect dependency via `fastapi[standard]`
+  for `TestClient`, but this is the first *direct* runtime use of it).
 - 2026-09-28: **Built the first frontend (rough MVP): React + TypeScript +
   Vite, three pages.** Chose that stack deliberately (most common pairing
   with a FastAPI backend, plus a chance to pick up TypeScript). Built shared

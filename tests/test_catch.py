@@ -21,8 +21,10 @@ the session's timezone GUC, not necessarily `Z`/`+00:00`). See
 
 from datetime import datetime
 
+import httpx
 import pytest
 
+import clients.open_meteo as open_meteo
 from models import Catch
 
 
@@ -332,3 +334,118 @@ def test_delete_other_users_catch_returns_404_and_leaves_it_in_place(client, db_
 
     assert r.status_code == 404
     assert db_session.get(Catch, catch_id) is not None
+
+
+# ---------------------------------------------------------------------------
+# POST /catch/ - Open-Meteo weather snapshot integration
+#
+# `clients/open_meteo.py`'s internal `_fetch()` is monkeypatched to control
+# what Open-Meteo "returns" without ever making a real HTTP call. This still
+# exercises `get_weather_snapshot()`'s own parsing/fallback logic for real -
+# only the actual network hop is replaced.
+# ---------------------------------------------------------------------------
+
+
+async def _fake_fetch_success(base_url, path, params):
+    """Stands in for a real Open-Meteo forecast response. `date_caught` in
+    the tests below is 2026-05-01T10:30:00, so the closest hourly reading is
+    deliberately the 10:00 entry (a 30-minute gap beats the 09:00 entry's
+    90-minute gap; the 11:00 entry ties at 30 minutes but the lookup keeps
+    the first-seen match on ties)."""
+    return {
+        "hourly": {
+            "time": ["2026-05-01T09:00", "2026-05-01T10:00", "2026-05-01T11:00"],
+            "temperature_2m": [18.5, 20.1, 21.3],
+            "weathercode": [1, 2, 3],
+        },
+        "daily": {
+            "sunrise": ["2026-05-01T06:15"],
+            "sunset": ["2026-05-01T18:05"],
+        },
+    }
+
+
+async def _fake_fetch_always_fails(base_url, path, params):
+    raise httpx.ConnectError("simulated network failure")
+
+
+async def _fail_if_weather_lookup_is_attempted(*args, **kwargs):
+    raise AssertionError(
+        "get_weather_snapshot() should never be called when latitude/longitude are missing"
+    )
+
+
+def test_create_catch_with_coordinates_and_successful_weather_lookup_populates_snapshot(
+    client, db_session, make_user, monkeypatch
+):
+    monkeypatch.setattr(open_meteo, "_fetch", _fake_fetch_success)
+    user = make_user()
+    payload = _full_payload(date_caught="2026-05-01T10:30:00")
+
+    r = client.post("/catch/", json=payload, headers=user["headers"])
+
+    assert r.status_code in (200, 201), r.text
+    body = r.json()
+    assert body["temperature"] == pytest.approx(20.1)
+    assert body["conditions"] == "Partly cloudy"
+    assert body["sunrise"] == "2026-05-01T06:15:00"
+    assert body["sunset"] == "2026-05-01T18:05:00"
+
+    row = db_session.get(Catch, body["id"])
+    assert row is not None
+    assert float(row.temperature) == pytest.approx(20.1)
+    assert row.conditions == "Partly cloudy"
+    assert row.sunrise == datetime(2026, 5, 1, 6, 15)
+    assert row.sunset == datetime(2026, 5, 1, 18, 5)
+
+
+def test_create_catch_without_coordinates_skips_weather_lookup_entirely(
+    client, db_session, make_user, monkeypatch
+):
+    monkeypatch.setattr(
+        "routers.catches.get_weather_snapshot", _fail_if_weather_lookup_is_attempted
+    )
+    user = make_user()
+    payload = _full_payload(latitude=None, longitude=None)
+
+    r = client.post("/catch/", json=payload, headers=user["headers"])
+
+    assert r.status_code in (200, 201), r.text
+    body = r.json()
+    assert body["latitude"] is None
+    assert body["longitude"] is None
+    for field in ("temperature", "conditions", "sunrise", "sunset"):
+        assert body.get(field) is None
+
+    row = db_session.get(Catch, body["id"])
+    assert row is not None
+    assert row.latitude is None
+    assert row.longitude is None
+    assert row.temperature is None
+    assert row.conditions is None
+    assert row.sunrise is None
+    assert row.sunset is None
+
+
+def test_create_catch_with_coordinates_and_failed_weather_lookup_still_persists_catch(
+    client, db_session, make_user, monkeypatch
+):
+    monkeypatch.setattr(open_meteo, "_fetch", _fake_fetch_always_fails)
+    user = make_user()
+    payload = _full_payload(date_caught="2026-05-01T10:30:00")
+
+    r = client.post("/catch/", json=payload, headers=user["headers"])
+
+    assert r.status_code in (200, 201), r.text
+    body = r.json()
+    assert body["species"] == payload["species"]
+    for field in ("temperature", "conditions", "sunrise", "sunset"):
+        assert body.get(field) is None
+
+    row = db_session.get(Catch, body["id"])
+    assert row is not None
+    assert row.species == payload["species"]
+    assert row.temperature is None
+    assert row.conditions is None
+    assert row.sunrise is None
+    assert row.sunset is None

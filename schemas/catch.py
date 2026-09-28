@@ -39,5 +39,13 @@ class CatchResponse(BaseModel):
     lure_id: int | None
     depth: float | None
     notes: str | None
+    # Weather snapshot captured at creation time (best-effort — see
+    # POST /catch/, null if the Open-Meteo lookup failed or the catch has no
+    # latitude/longitude). Not part of CatchCreate/CatchUpdate: these are
+    # server-computed, not user-supplied.
+    temperature: float | None
+    conditions: str | None
+    sunrise: datetime | None
+    sunset: datetime | None
 
     model_config = {"from_attributes": True}

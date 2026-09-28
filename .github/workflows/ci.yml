@@ -50,6 +50,7 @@ jobs:
             "bcrypt>=4.1" \
             "pyjwt>=2.9" \
             "python-multipart>=0.0.9" \
+            "httpx>=0.27" \
             "pytest>=8.0"
 
       - name: Run tests
