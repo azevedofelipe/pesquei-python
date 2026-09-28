@@ -49,9 +49,15 @@ Practical implications of that shift:
 - PyJWT (JWT signing for auth)
 - bcrypt (password hashing)
 
+- pytest 8+ (35 tests, `tests/`)
+- React 19 + TypeScript + Vite (`frontend/`)
+- GitHub Actions (`.github/workflows/ci.yml`) — backend tests + frontend
+  build, required status checks on `main`
+
 ### Installed but not wired into the project yet
 - Ruff — installed, no `pyproject.toml`/`ruff.toml` config, not run in CI
 - httpx — installed (FastAPI dependency), not used for outbound calls yet
+  (planned for Phase 6, external weather/tide APIs)
 
 ### Planned, not started
 - Pyright (no config)
@@ -59,8 +65,6 @@ Practical implications of that shift:
   `venv` is still populated by hand with matching versions)
 - Redis, RabbitMQ, Celery
 - Docker / Docker Compose
-- pytest
-- GitHub Actions (no `.github/workflows`)
 - AWS / Railway deployment
 
 ---
@@ -109,43 +113,49 @@ Practical implications of that shift:
 ### Notable gaps vs. what a "done" phase would look like
 - No refresh tokens (Phase 3's last item).
 - No `/health` endpoint (called for in Phase 1).
-- No tests anywhere in the repo.
+- Four known backend bugs, not yet fixed (see `AGENTS.md` Known issues):
+  `CatchCreate.date_caught`'s bad default, a timezone shift on
+  `date_caught` round-tripping through Postgres, `POST /lure/`/`POST /catch/`
+  missing `response_model`/`201`, and `Lure.weight`/`size` serializing
+  inconsistently (`Decimal` vs the rest of the app's `float`).
+- Frontend has no edit/delete UI (backend supports it), no pagination, no
+  tests, and catch location is still manual lat/long entry rather than
+  auto-captured from the device.
 - No lint/type-check config despite Ruff and (eventually) Pyright being on
   the intended stack.
 - `pyproject.toml` exists but nothing installs from it yet (no `uv`/lockfile
   workflow) — the local `venv` is still hand-populated to match it.
 - No README.md.
-- No CI (`.github/workflows` doesn't exist).
+- No weather/tide/sunrise external API integration yet (Phase 6).
 
 ---
 
 ## Next up (short-term backlog)
 
-Roughly in the order it makes sense to tackle them:
+As of 2026-09-28: backend CRUD/auth, the pytest suite, CI, and a rough
+frontend MVP (login/register, lures, catches) are all done and merged to
+`main`. Full sequence with reasoning now lives in `STEPS.md` — this list is
+just the near-term highlights:
 
-1. ~~Fix the local `venv/`~~ — done 2026-09-28 (rebuilt from Python 3.12).
-2. ~~Pin dependencies~~ — `pyproject.toml` merged in from
-   `azevedofelipe/link-records-to-user` 2026-09-28 (still no lockfile/`uv`
-   workflow, but the dependency list exists and is accurate).
-3. ~~Add `GET /catch`, `GET /lure` (list) and `DELETE`/`PATCH` for both
-   resources~~ — done 2026-09-28.
-4. ~~Add a `users` router~~ — done 2026-09-28, reshaped: fetch-only, since
-   ~~Start Phase 3 (auth)~~ landed the same day via a merged branch and
-   `POST /auth/register` already covers user creation.
-5. Fix `CatchCreate.date_caught` default (see `AGENTS.md` — still not done).
-6. Add `/health`.
-7. Basic Ruff config + a first pass of lint cleanup.
-8. Refresh tokens (the one piece of Phase 3 still missing).
-9. Introduce pytest with at least endpoint-level tests for existing routes
-   before adding much more surface area — now unblocked, since the venv
-   works and the whole auth + catch/lure/user surface has been manually
-   verified once already (register/login/CRUD/ownership checks all passed
-   2026-09-28).
+1. Fix the four known backend bugs (`STEPS.md` step 8) — do this before
+   external APIs, since weather/tide lookups depend on a correct
+   `date_caught`.
+2. Automatic GPS location on the catch form (`STEPS.md` step 9) — replace
+   manual lat/long entry with `navigator.geolocation`, editable as a
+   fallback/override. Requested explicitly 2026-09-28.
+3. External APIs — Phase 6 below (`STEPS.md` step 10): Open-Meteo weather,
+   sunrise/sunset, tide, stored as a snapshot on each catch. Depends on
+   step 2 for real coordinates to query against.
+4. Redis caching for those lookups (`STEPS.md` step 11).
+5. Data model growth — species table, `catch_lures` join, photos
+   (`STEPS.md` step 12).
+6. Frontend polish — edit/delete UI, pagination (`STEPS.md` step 13).
+7. Smaller, can-slot-in-anytime items: `/health`, Ruff/Pyright config,
+   README.md, refresh tokens.
 
 The phase list below is the longer-term roadmap and stays mostly as originally
-planned — it's ordering *by topic*, not a strict sequence, and it's fine to
-pull earlier items (like testing or Docker) forward if that's what a given
-agent session is working on.
+planned — it's ordering *by topic*, not a strict sequence. `STEPS.md` is the
+authoritative sequence; this section is a summary.
 
 ---
 
@@ -252,11 +262,13 @@ Research:
 # Phase 5 – Fishing Features
 
 Implement:
-- [x] Catch log (basic)
+- [x] Catch log (basic, plus a frontend page to use it)
 - [ ] Species (as its own table/relation, not a free-text field)
-- [x] Lure inventory (basic)
+- [x] Lure inventory (basic, plus a frontend page to use it)
 - [ ] Photos
-- [x] GPS coordinates (lat/long columns exist on Catch)
+- [x] GPS coordinates — columns exist on `Catch` and the frontend has manual
+      lat/long inputs; auto-capture from the device (`STEPS.md` step 9) is
+      still open
 
 Research:
 - Multipart uploads
@@ -265,6 +277,10 @@ Research:
 ---
 
 # Phase 6 – External APIs
+
+Status: not started. Do Phase 5's GPS auto-capture and the `date_caught`
+bug fixes (`STEPS.md` steps 8-9) first — this phase needs real coordinates
+and a correct timestamp to query weather/tide "at the time of the catch."
 
 Use:
 - Open-Meteo
@@ -311,24 +327,34 @@ Research:
 
 # Phase 9 – Testing
 
-Learn:
-- pytest
-- Fixtures
-- Mocking
-- Integration tests
+Status: done for the backend (35 tests, `tests/`, pytest + `TestClient`
+against a real dedicated `pesquei_test` Postgres database). Frontend has no
+tests yet (no Vitest/RTL setup) — not blocking, worth adding once the
+frontend has more than 3 pages.
 
-Aim for endpoint tests.
+Learn:
+- [x] pytest
+- [x] Fixtures
+- Mocking — not needed yet (no external API calls to mock); will matter for
+  Phase 6
+- [x] Integration tests
+
+Aim for endpoint tests. — done, plus ownership/auth edge cases.
 
 ---
 
 # Phase 10 – CI/CD
 
-GitHub Actions:
-- Lint
-- Type check
-- Tests
+Status: CI done — GitHub Actions runs backend tests + frontend build on
+every PR, required status checks on `main`. Lint/typecheck and deploy still
+open.
 
-Deploy to Railway, later AWS.
+GitHub Actions:
+- [ ] Lint
+- [ ] Type check
+- [x] Tests
+
+Deploy to Railway, later AWS. — not started.
 
 ---
 
