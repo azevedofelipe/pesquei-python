@@ -109,6 +109,13 @@ current.
   install .` set up yet, since the repo isn't laid out as an installable
   package). Update both when adding a runtime dependency, or CI will pass
   locally-installed code that doesn't actually match what CI tested.
+- **pytest needs `pythonpath = ["."]`** in `pyproject.toml`'s
+  `[tool.pytest.ini_options]` — without it, `tests/conftest.py`'s `from main
+  import app` only resolves when pytest is invoked as `python -m pytest`
+  (which prepends cwd to `sys.path`), not with a bare `pytest` command. CI
+  runs bare `pytest`, so this broke CI on the first run (2026-09-28) despite
+  passing locally — always sanity-check a new CI workflow actually goes
+  green on GitHub, don't assume "passes locally" implies "passes in CI."
 - `POST /lure/` and `POST /catch/` have no `response_model` and no explicit
   `status_code` — they return a bare `200` with whatever the SQLAlchemy
   object serializes to, unlike `POST /auth/register` which declares
