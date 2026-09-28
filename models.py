@@ -57,7 +57,7 @@ class Catch(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    date_caught: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    date_caught: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     species: Mapped[Optional[str]] = mapped_column(String(50))
     weight: Mapped[Optional[decimal.Decimal]] = mapped_column(Numeric(6, 2))

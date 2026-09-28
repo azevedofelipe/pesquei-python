@@ -1,10 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CatchCreate(BaseModel):
-    date_caught: datetime = datetime.now()
+    date_caught: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     species: str | None = None
     weight: float | None = None
     length: float | None = None

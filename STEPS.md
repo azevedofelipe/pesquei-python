@@ -86,18 +86,22 @@ Four bugs accumulated across earlier sessions, logged in `AGENTS.md`. Fixing
 them now because step 10 (weather/tide lookups keyed on catch date + location)
 would otherwise be built on top of an already-known-broken timestamp.
 
-- [ ] `CatchCreate.date_caught` default (`schemas/catch.py`) is evaluated
+- [x] `CatchCreate.date_caught` default (`schemas/catch.py`) is evaluated
       once at import time, not per-request — `Field(default_factory=datetime.now)`
-      instead of `datetime.now()`
-- [ ] `Catch.date_caught` shifts by the server's local UTC offset when
+      instead of `datetime.now()` (landed as an aware
+      `Field(default_factory=lambda: datetime.now(timezone.utc))`, see
+      `AGENTS.md` Log for why aware over bare `datetime.now()`)
+- [x] `Catch.date_caught` shifts by the server's local UTC offset when
       round-tripped through Postgres — the column is a naive `DateTime`
       with no stated timezone convention. Likely fix: migrate the column to
       `DateTime(timezone=True)` and be explicit about UTC end-to-end (store
-      UTC, convert to local only for display in the frontend)
-- [ ] `POST /lure/` and `POST /catch/` have no `response_model`/`status_code`
+      UTC, convert to local only for display in the frontend) — migration
+      `b671f9a295a9` landed; frontend display-side conversion still open,
+      see `AGENTS.md` Log
+- [x] `POST /lure/` and `POST /catch/` have no `response_model`/`status_code`
       — add `response_model=LureResponse`/`CatchResponse`, `status_code=201`,
       matching `POST /auth/register`'s pattern
-- [ ] `LureResponse.weight`/`size` are typed `Decimal` (serializes as a JSON
+- [x] `LureResponse.weight`/`size` are typed `Decimal` (serializes as a JSON
       *string*) while `Catch`'s equivalent fields are `float` (serializes as
       a JSON *number*) — pick one convention for both, most likely `float`
       to match `Catch` and simplify the frontend (`frontend/src/api.ts`'s

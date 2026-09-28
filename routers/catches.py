@@ -39,7 +39,7 @@ def get_catch(catch_id: int, db: Session = Depends(get_db), current_user: User =
     return resultado
 
 
-@router.post("/")
+@router.post("/", response_model=CatchResponse, status_code=201)
 async def create_catch(catch: CatchCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     catch_data = catch.model_dump()
 
