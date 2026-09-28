@@ -81,6 +81,21 @@ current.
   someone else returns 404 (not 403), same pattern used for `GET /user/{id}`
   (you can only fetch your own user record). Follow this pattern for any new
   catch/lure/user route.
+- **Frontend** (added 2026-09-28): React + TypeScript + Vite, in `frontend/`.
+  `frontend/src/api.ts` is the single source of truth for talking to the
+  backend — token storage, a typed `apiFetch` wrapper (401 → redirect to
+  `/login`, throws `ApiError` otherwise), and TS interfaces mirroring the
+  backend's Pydantic schemas. Page components (`frontend/src/pages/`) should
+  import from `api.ts` rather than calling `fetch()` directly. Routing is
+  `react-router-dom` (`frontend/src/App.tsx`), with a `RequireAuth` guard on
+  protected routes. In dev, `vite.config.ts` proxies `/auth`, `/catch`,
+  `/lure`, `/user` to the FastAPI dev server on port 8000 — no CORS needed.
+  Those proxy rules are anchored regexes (`^/lure(/|$)`, not a plain `/lure`
+  string) on purpose: a plain prefix silently swallows the frontend's own
+  `/lures` route into the backend proxy. Run it: `cd frontend && npm run
+  dev` (needs the backend running separately on port 8000). CI runs
+  `npm ci && npm run build` (`tsc -b && vite build`) as a required check,
+  same as the backend's pytest job.
 
 ## Known issues / gotchas
 
@@ -127,9 +142,37 @@ current.
 - `POST /lure/` and `POST /catch/` have no `response_model` and no explicit
   `status_code` — they return a bare `200` with whatever the SQLAlchemy
   object serializes to, unlike `POST /auth/register` which declares
-  `response_model=UserResponse, status_code=201`. Found independently by two
-  agents while writing tests 2026-09-28; functionally harmless (tests
-  accept 200) but worth cleaning up for consistency at some point.
+  `response_model=UserResponse, status_code=201`. Found independently by
+  three agents (two writing tests, one building the frontend) on 2026-09-28;
+  functionally harmless so far (nothing depends on the status code, and
+  FastAPI's default encoder happens to succeed) but it's directly the cause
+  of the next bug and worth fixing for real at some point — add
+  `response_model=LureResponse`/`CatchResponse` + `status_code=201` to both.
+- **`Lure.weight`/`Lure.size` serialize inconsistently between endpoints**:
+  `schemas/lure.py`'s `LureResponse` types them as `Decimal`, which Pydantic
+  v2 serializes to a JSON *string* (e.g. `"10.50"`) — but `POST /lure/` has
+  no `response_model` (see above), so it returns the raw ORM object where
+  the same field is a JSON *number* (`10.5`). `Catch`'s equivalent fields
+  don't have this problem (`schemas/catch.py` types them `float`, not
+  `Decimal`, consistently). Found 2026-09-28 while building the frontend;
+  `frontend/src/api.ts`'s `Lure.weight`/`size` are typed `number | string |
+  null` to reflect this honestly rather than lying with `number`. Real fix
+  is adding `response_model=LureResponse` to `POST /lure/` (see above) so
+  both endpoints serialize the same way.
+- **`Catch.date_caught` may shift by several hours round-tripping through
+  Postgres** — sending a UTC ISO datetime (`...T11:30:00.000Z`) to
+  `POST /catch/` and reading it back via `GET /catch/` returned a value
+  shifted by the server's local UTC offset (e.g. came back as `08:30:00`).
+  The `date_caught` column is a naive `DateTime` (no timezone), so Postgres/
+  psycopg2 has no stated convention for what a naive value it receives or
+  returns means — something in that path is silently treating UTC as
+  local time (or vice versa) rather than preserving the instant. Found
+  2026-09-28 while building the frontend catches page; not fixed — the page
+  displays whatever comes back via `toLocaleString()`, so a user may see a
+  different wall-clock time than what they entered. Proper fix is likely
+  making the column timezone-aware (`DateTime(timezone=True)`) and being
+  explicit about UTC end-to-end, but that's a migration + backend change,
+  out of scope for a frontend PR.
 
 ## Decisions
 
@@ -142,6 +185,28 @@ current.
 ## Log
 
 <!-- Newest entries at the top. Format: `- YYYY-MM-DD: <what happened/learned, why it matters>` -->
+- 2026-09-28: **Built the first frontend (rough MVP): React + TypeScript +
+  Vite, three pages.** Chose that stack deliberately (most common pairing
+  with a FastAPI backend, plus a chance to pick up TypeScript). Built shared
+  scaffolding centrally first — `frontend/src/api.ts`, `App.tsx` router
+  shell, `Nav.tsx`, `vite.config.ts` proxy, shared CSS — same reasoning as
+  the pytest `conftest.py` decision below: three agents building
+  Login/Lures/Catches in parallel needed one consistent foundation, not
+  three incompatible ones. Caught a real bug in that scaffolding myself
+  before delegating: a plain `/lure` string in the Vite proxy config
+  prefix-matches the frontend's own `/lures` route, silently routing it to
+  the (404-ing) backend instead of the SPA — fixed with anchored regexes
+  (`^/lure(/|$)`). Since the three page-agents couldn't reliably share the
+  same dev server ports, each verified its own page's API contract via
+  `curl` directly against its own backend instance on a dedicated port
+  (8000/8001/8002) rather than fighting over the shared Vite proxy target —
+  a useful pattern when the "shared harness" itself can't be triple-run.
+  Did a final real-browser pass myself afterward (register → login → create
+  lure → create catch linked to that lure) to get PR screenshots and catch
+  anything curl-only checks would miss. Also decided: three separate PRs,
+  not three commits in one — matches "one page, one reviewable/mergeable
+  unit," at the cost of a merge-order dependency (login's PR carries the
+  shared scaffolding, so it should merge before lures/catches).
 - 2026-09-28: **Added the first test suite (35 tests) and CI.** Built
   `tests/conftest.py` centrally first (dedicated `pesquei_test` Postgres db,
   `client`/`db_session`/`make_user` fixtures) rather than letting three
