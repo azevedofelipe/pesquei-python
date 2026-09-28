@@ -98,6 +98,13 @@ Practical implications of that shift:
 - **DB access** (`database.py`): SQLAlchemy engine + `SessionLocal`, `get_db()`
   dependency reads `DATABASE_URL` from `.env`.
 - **`pyproject.toml`** exists (dependency list only, no lockfile yet).
+- **Frontend** (`frontend/`, added 2026-09-28): React + TypeScript + Vite,
+  a rough MVP. Three pages: login/register, lures (create + view), catches
+  (create + view, with an optional lure link). Talks to the backend via
+  `frontend/src/api.ts`; Vite's dev proxy forwards API calls so no CORS
+  setup was needed. No edit/delete UI yet (the backend supports it, the
+  frontend doesn't expose it), no tests, no styling beyond a shared
+  minimal stylesheet — genuinely rough, as asked for.
 
 ### Notable gaps vs. what a "done" phase would look like
 - No refresh tokens (Phase 3's last item).
