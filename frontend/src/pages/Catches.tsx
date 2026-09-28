@@ -32,6 +32,10 @@ export default function Catches() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [locationSuccess, setLocationSuccess] = useState("");
+
   useEffect(() => {
     let cancelled = false;
 
@@ -57,6 +61,38 @@ export default function Catches() {
 
   function updateField(field: keyof typeof form, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleUseLocation() {
+    setLocationError("");
+    setLocationSuccess("");
+
+    if (!("geolocation" in navigator)) {
+      setLocationError("Geolocation isn't supported by this browser. Enter coordinates manually.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        setForm((prev) => ({
+          ...prev,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        }));
+        setLocationSuccess("Location captured. You can still edit it below.");
+      },
+      (error) => {
+        setLocating(false);
+        const message =
+          error.code === error.PERMISSION_DENIED
+            ? "Location permission denied. Enter coordinates manually."
+            : "Couldn't get your location. Enter coordinates manually.";
+        setLocationError(message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -86,6 +122,8 @@ export default function Catches() {
       const created = await createCatch(payload);
       setCatches((prev) => [...prev, created]);
       setForm(emptyForm);
+      setLocationError("");
+      setLocationSuccess("");
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "Failed to create catch");
     } finally {
@@ -138,6 +176,12 @@ export default function Catches() {
           value={form.length}
           onChange={(e) => updateField("length", e.target.value)}
         />
+
+        <button type="button" onClick={handleUseLocation} disabled={locating}>
+          {locating ? "Locating..." : "Use my location"}
+        </button>
+        {locationError && <p className="error">{locationError}</p>}
+        {locationSuccess && <p className="success">{locationSuccess}</p>}
 
         <label htmlFor="latitude">Latitude</label>
         <input
