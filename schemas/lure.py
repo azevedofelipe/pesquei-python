@@ -15,6 +15,7 @@ class LureCreate(BaseModel):
 
 class LureResponse(BaseModel):
     id: int
+    user_id: int
     name: str | None
     weight: Decimal | None
     type: str | None
