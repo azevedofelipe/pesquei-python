@@ -48,6 +48,8 @@ Practical implications of that shift:
 
 - PyJWT (JWT signing for auth)
 - bcrypt (password hashing)
+- httpx (async HTTP client, `clients/http.py` + `clients/open_meteo.py` —
+  Open-Meteo weather/sunrise/sunset lookups)
 
 - pytest 8+ (35 tests, `tests/`)
 - React 19 + TypeScript + Vite (`frontend/`)
@@ -56,8 +58,6 @@ Practical implications of that shift:
 
 ### Installed but not wired into the project yet
 - Ruff — installed, no `pyproject.toml`/`ruff.toml` config, not run in CI
-- httpx — installed (FastAPI dependency), not used for outbound calls yet
-  (planned for Phase 6, external weather/tide APIs)
 
 ### Planned, not started
 - Pyright (no config)
@@ -126,7 +126,9 @@ Practical implications of that shift:
 - `pyproject.toml` exists but nothing installs from it yet (no `uv`/lockfile
   workflow) — the local `venv` is still hand-populated to match it.
 - No README.md.
-- No weather/tide/sunrise external API integration yet (Phase 6).
+- Weather/sunrise-sunset external API integration landed (Phase 6, see
+  status above); tide deliberately deferred, no tests yet (needs `httpx`
+  mocking, not written as part of this change — flagged for qa-tester).
 
 ---
 
@@ -143,9 +145,12 @@ just the near-term highlights:
 2. Automatic GPS location on the catch form (`STEPS.md` step 9) — replace
    manual lat/long entry with `navigator.geolocation`, editable as a
    fallback/override. Requested explicitly 2026-09-28.
-3. External APIs — Phase 6 below (`STEPS.md` step 10): Open-Meteo weather,
-   sunrise/sunset, tide, stored as a snapshot on each catch. Depends on
-   step 2 for real coordinates to query against.
+3. External APIs — Phase 6 below (`STEPS.md` step 10): done for weather +
+   sunrise/sunset (Open-Meteo, stored as a snapshot on each catch); tide
+   deliberately deferred (see status note in Phase 6 below). Landed
+   2026-09-28 in parallel with items 1/2 above (separate concurrent
+   worktracks), using whatever `latitude`/`longitude` already existed on
+   `Catch` rather than actually depending on step 2 landing first.
 4. Redis caching for those lookups (`STEPS.md` step 11).
 5. Data model growth — species table, `catch_lures` join, photos
    (`STEPS.md` step 12).
@@ -278,23 +283,38 @@ Research:
 
 # Phase 6 – External APIs
 
-Status: not started. Do Phase 5's GPS auto-capture and the `date_caught`
-bug fixes (`STEPS.md` steps 8-9) first — this phase needs real coordinates
-and a correct timestamp to query weather/tide "at the time of the catch."
+Status: weather/sunrise-sunset done, tide deliberately deferred (2026-09-28).
+`clients/http.py` (shared `httpx.AsyncClient` wrapper) + `clients/open_meteo.py`
+(Open-Meteo, no API key, free) fetch a weather snapshot synchronously inside
+`POST /catch/` using the catch's own `latitude`/`longitude`/`date_caught`; a
+single Open-Meteo call's `hourly`+`daily` blocks cover both temperature and
+sunrise/sunset, so no separate sunrise/sunset API was needed. Tide was
+skipped: no genuinely free, no-paid-tier-risk tide API could be confirmed for
+this app's target region (NOAA CO-OPS is free but US-coastal-only) — see
+AGENTS.md's 2026-09-28 log entry. This was built without step 9 (GPS
+auto-capture) having landed yet — not a hard dependency after all, since
+`Catch.latitude`/`longitude` already existed as manual fields; auto-capture
+will just make the coordinates this phase already uses more reliable.
 
 Use:
-- Open-Meteo
-- Sunrise/Sunset API
-- Tide API for your region
+- [x] Open-Meteo
+- [x] Sunrise/Sunset — folded into the Open-Meteo call above, no separate API
+- [ ] Tide API for your region — deferred, see status note above
 
 Research:
-- async/await
-- httpx
-- Timezones
-- Rate limiting
-- Retries
+- [x] async/await — `POST /catch/` is now `async def`, awaits the lookup
+- [x] httpx — `clients/http.py`
+- [ ] Timezones — deliberately not touched here; `sunrise`/`sunset` store
+      naive datetimes matching `date_caught`'s existing (buggy, separately
+      tracked) convention rather than fixing it as a drive-by
+- [x] Retries — connection-level only, via `httpx.AsyncHTTPTransport(retries=...)`
+- [ ] Rate limiting — not implemented; Open-Meteo's free tier is generous
+      enough (10k calls/day, no key) that this app's traffic won't hit it
+      soon, but worth revisiting once step 11's caching lands
 
-Store weather snapshot with each catch.
+Store weather snapshot with each catch. — done: `temperature`, `conditions`,
+`sunrise`, `sunset` columns on `Catch`, nullable, migration
+`0b19934327fb_add_weather_snapshot_columns_to_catch.py`.
 
 ---
 

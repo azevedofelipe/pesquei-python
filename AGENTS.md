@@ -138,6 +138,24 @@ reusable instead of re-deriving each session.
 
 ## Known issues / gotchas
 
+- **`pesquei_test`'s `catch.date_caught` column has drifted to `timestamp
+  with time zone`, while the real dev DB and `models.py` both say naive
+  `timestamp` (no timezone)** — found 2026-09-28 while adding the Phase 6
+  weather columns. `tests/conftest.py`'s schema is created once via
+  `Base.metadata.create_all(checkfirst=True)` and never altered after that,
+  so whatever type that column had the first time the table was created in
+  `pesquei_test` is what it still has, even if `models.py` changed since.
+  This causes 4 pre-existing `test_catch.py` failures around `date_caught`
+  round-tripping with a `-03:00` offset (`America/Sao_Paulo`, this machine's
+  Postgres session timezone) — **not caused by the weather integration**,
+  reproducible on a clean checkout by just running `pytest` before touching
+  anything. Same root cause as the next entry below (naive-vs-aware
+  `date_caught` handling), but a distinct symptom worth naming separately
+  since it's specific to the test database's frozen-at-creation schema, not
+  the app code. Likely fix, once step 8's `date_caught` timezone bug is
+  addressed for real: drop and recreate `pesquei_test` (or `ALTER TABLE
+  catch ALTER COLUMN date_caught TYPE timestamp` there) so its schema
+  matches `models.py` again.
 - **`CatchCreate.date_caught` default is a bug**: `schemas/catch.py` sets
   `date_caught: datetime = datetime.now()`. That default is evaluated once,
   at import time (class definition), not per-request — every catch created
@@ -224,6 +242,45 @@ reusable instead of re-deriving each session.
 ## Log
 
 <!-- Newest entries at the top. Format: `- YYYY-MM-DD: <what happened/learned, why it matters>` -->
+- 2026-09-28: **Phase 6 / STEPS.md step 10: Open-Meteo weather + sunrise/sunset
+  snapshot on `Catch`, tide deliberately skipped.** Added `clients/http.py`
+  (shared `httpx.AsyncClient` factory: base URL, timeout, connection-retry
+  config in one place) and `clients/open_meteo.py`. Confirmed directly
+  against the live API (not just docs) that a single Open-Meteo call
+  requesting both `hourly=temperature_2m,weathercode` and `daily=sunrise,sunset`
+  returns everything needed — no separate sunrise/sunset API required, matching
+  the roadmap's guess. Two Open-Meteo endpoints are used: `api.open-meteo.com/v1/forecast`
+  (recent past ~90 days / near-future) and `archive-api.open-meteo.com/v1/archive`
+  (older dates the forecast endpoint 400s on) — the client tries forecast
+  first and falls back to archive automatically. Both are free, unauthenticated,
+  no paid tier, confirmed by hitting them directly.
+  **Tide was deliberately skipped, not forgotten**: the only genuinely free,
+  no-API-key tide API found is NOAA CO-OPS, which only covers US NOAA
+  stations — nothing in this codebase indicates the app's target region is
+  US coastal waters, and no other tide API could be confirmed free with no
+  paid-tier risk. Per explicit instruction, integrating something with cost
+  risk was worse than shipping without tide, so `Catch` has no `tide_state`
+  column. Revisit once the target region is confirmed and/or a confirmed-free
+  tide source for it is found.
+  `POST /catch/` is now `async def` and awaits the weather lookup
+  synchronously (per the roadmap's stated default) using whatever
+  `latitude`/`longitude`/`date_caught` the request already has; skips the
+  lookup entirely (no external call at all) if either coordinate is missing;
+  and never blocks catch creation on lookup failure — `get_weather_snapshot()`
+  catches its own `httpx` errors, logs a warning, and returns `None`, leaving
+  the four new columns null. New nullable `Catch` columns: `temperature`
+  (`Numeric(5,2)`, same convention as `weight`/`length`), `conditions`
+  (`String(100)`, a label derived from Open-Meteo's WMO `weathercode`),
+  `sunrise`/`sunset` (naive `DateTime`, matching `date_caught`'s existing
+  naive-datetime convention rather than fixing that separately-tracked bug).
+  Migration `0b19934327fb_add_weather_snapshot_columns_to_catch.py`, applied
+  and curl-verified against `pesquei_test` only — **not applied to the real
+  dev DB** (a concurrent worktree may also be migrating it; left for
+  release-manager/whoever merges first to run `alembic upgrade head` there,
+  resolving any two-heads conflict if another concurrent migration also
+  branched from `e25a6a259344`). Added `httpx` explicitly to `pyproject.toml`
+  and `ci.yml` (it was already an indirect dependency via `fastapi[standard]`
+  for `TestClient`, but this is the first *direct* runtime use of it).
 - 2026-09-28: **Built the first frontend (rough MVP): React + TypeScript +
   Vite, three pages.** Chose that stack deliberately (most common pairing
   with a FastAPI backend, plus a chance to pick up TypeScript). Built shared
