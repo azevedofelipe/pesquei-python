@@ -38,7 +38,7 @@ def get_lure(lure_id: int, db: Session = Depends(get_db), current_user: User = D
     return resultado
 
 
-@router.post("/")
+@router.post("/", response_model=LureResponse, status_code=201)
 def create_lure(
     lure: LureCreate,
     db: Session = Depends(get_db),
