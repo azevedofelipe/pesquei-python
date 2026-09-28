@@ -15,6 +15,18 @@ class CatchCreate(BaseModel):
     notes: str | None = None
 
 
+class CatchUpdate(BaseModel):
+    date_caught: datetime | None = None
+    species: str | None = None
+    weight: float | None = None
+    length: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    lure_id: int | None = None
+    depth: float | None = None
+    notes: str | None = None
+
+
 class CatchResponse(BaseModel):
     id: int
     user_id: int
