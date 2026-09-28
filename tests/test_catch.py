@@ -4,10 +4,19 @@ Uses the shared fixtures from conftest.py: `client`, `db_session`, and
 `make_user`. Every catch needs an owning user, so `make_user()` is used for
 every test - it also cleans up any catches (and lures) that user owns.
 
-Note: `CatchCreate.date_caught` has a known, already-logged bug (see
-AGENTS.md "CatchCreate.date_caught default is a bug") where its default is
-evaluated once at import time, not per request. `date_caught` is always
-passed explicitly below to avoid relying on that default.
+Note: `date_caught` is always passed explicitly below (rather than relying
+on `CatchCreate`'s default) so tests are deterministic.
+
+`Catch.date_caught` is a timezone-aware column (`DateTime(timezone=True)`,
+see AGENTS.md's 2026-09-28 log entry). The payloads below send *naive* ISO
+strings (no offset); Postgres interprets a naive value written to a
+`timestamptz` column as being in the session's timezone, tagging it with
+that offset on the way back out rather than shifting the wall-clock digits.
+So the correct round-trip check is "same wall-clock digits, now
+offset-tagged" - not an exact naive-vs-aware equality (which raises/always
+mismatches) and not exact-string comparison (the offset returned depends on
+the session's timezone GUC, not necessarily `Z`/`+00:00`). See
+`_assert_same_wall_clock` below.
 """
 
 from datetime import datetime
@@ -20,6 +29,19 @@ from models import Catch
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _assert_same_wall_clock(actual: datetime, expected_iso: str) -> None:
+    """Assert `actual` (a timezone-aware datetime from the DB or API
+    response) has the same wall-clock digits as `expected_iso` (the naive
+    ISO string originally sent), ignoring whatever offset Postgres tagged
+    it with. This is the fixed-bug invariant: previously the digits
+    themselves shifted by the server's UTC offset on round-trip; now they
+    don't, they're just correctly tagged with an explicit offset instead of
+    being ambiguously naive.
+    """
+    assert actual.tzinfo is not None, "expected a timezone-aware datetime"
+    assert actual.replace(tzinfo=None) == datetime.fromisoformat(expected_iso)
 
 
 def _full_payload(**overrides):
@@ -57,7 +79,7 @@ def test_create_catch_full_fields_persists_correctly(client, db_session, make_us
     row = db_session.get(Catch, body["id"])
     assert row is not None
     assert row.user_id == user["id"]
-    assert row.date_caught == datetime.fromisoformat(payload["date_caught"])
+    _assert_same_wall_clock(row.date_caught, payload["date_caught"])
     assert row.species == payload["species"]
     assert float(row.weight) == pytest.approx(payload["weight"])
     assert float(row.length) == pytest.approx(payload["length"])
@@ -82,7 +104,7 @@ def test_create_catch_minimal_fields_only_date_caught(client, db_session, make_u
 
     row = db_session.get(Catch, body["id"])
     assert row is not None
-    assert row.date_caught == datetime.fromisoformat(payload["date_caught"])
+    _assert_same_wall_clock(row.date_caught, payload["date_caught"])
     assert row.species is None
     assert row.weight is None
     assert row.length is None
@@ -198,7 +220,7 @@ def test_get_own_catch_returns_correct_fields(client, make_user):
     assert body["user_id"] == user["id"]
     assert body["species"] == payload["species"]
     assert body["notes"] == payload["notes"]
-    assert body["date_caught"] == datetime.fromisoformat(payload["date_caught"]).isoformat()
+    _assert_same_wall_clock(datetime.fromisoformat(body["date_caught"]), payload["date_caught"])
 
 
 def test_get_other_users_catch_returns_404(client, make_user):
@@ -255,7 +277,7 @@ def test_patch_updates_only_targeted_field(client, db_session, make_user):
     assert row.species == payload["species"]
     assert float(row.weight) == pytest.approx(payload["weight"])
     assert float(row.length) == pytest.approx(payload["length"])
-    assert row.date_caught == datetime.fromisoformat(payload["date_caught"])
+    _assert_same_wall_clock(row.date_caught, payload["date_caught"])
 
 
 def test_patch_other_users_catch_returns_404_and_leaves_it_unmodified(client, db_session, make_user):

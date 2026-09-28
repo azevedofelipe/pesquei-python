@@ -138,12 +138,6 @@ reusable instead of re-deriving each session.
 
 ## Known issues / gotchas
 
-- **`CatchCreate.date_caught` default is a bug**: `schemas/catch.py` sets
-  `date_caught: datetime = datetime.now()`. That default is evaluated once,
-  at import time (class definition), not per-request — every catch created
-  without an explicit `date_caught` gets the timestamp of when the server
-  started, not when the request happened. Fix is `Field(default_factory=datetime.now)`.
-  Not yet fixed as of 2026-09-27.
 - Router handlers mix Portuguese and English names (`novo_catch`, `novo_lure`,
   `resultado`) — existing style in the two routers that exist so far; not a
   hard rule, just don't be surprised by it or "fix" it as a drive-by.
@@ -178,40 +172,29 @@ reusable instead of re-deriving each session.
   runs bare `pytest`, so this broke CI on the first run (2026-09-28) despite
   passing locally — always sanity-check a new CI workflow actually goes
   green on GitHub, don't assume "passes locally" implies "passes in CI."
-- `POST /lure/` and `POST /catch/` have no `response_model` and no explicit
-  `status_code` — they return a bare `200` with whatever the SQLAlchemy
-  object serializes to, unlike `POST /auth/register` which declares
-  `response_model=UserResponse, status_code=201`. Found independently by
-  three agents (two writing tests, one building the frontend) on 2026-09-28;
-  functionally harmless so far (nothing depends on the status code, and
-  FastAPI's default encoder happens to succeed) but it's directly the cause
-  of the next bug and worth fixing for real at some point — add
-  `response_model=LureResponse`/`CatchResponse` + `status_code=201` to both.
-- **`Lure.weight`/`Lure.size` serialize inconsistently between endpoints**:
-  `schemas/lure.py`'s `LureResponse` types them as `Decimal`, which Pydantic
-  v2 serializes to a JSON *string* (e.g. `"10.50"`) — but `POST /lure/` has
-  no `response_model` (see above), so it returns the raw ORM object where
-  the same field is a JSON *number* (`10.5`). `Catch`'s equivalent fields
-  don't have this problem (`schemas/catch.py` types them `float`, not
-  `Decimal`, consistently). Found 2026-09-28 while building the frontend;
-  `frontend/src/api.ts`'s `Lure.weight`/`size` are typed `number | string |
-  null` to reflect this honestly rather than lying with `number`. Real fix
-  is adding `response_model=LureResponse` to `POST /lure/` (see above) so
-  both endpoints serialize the same way.
-- **`Catch.date_caught` may shift by several hours round-tripping through
-  Postgres** — sending a UTC ISO datetime (`...T11:30:00.000Z`) to
-  `POST /catch/` and reading it back via `GET /catch/` returned a value
-  shifted by the server's local UTC offset (e.g. came back as `08:30:00`).
-  The `date_caught` column is a naive `DateTime` (no timezone), so Postgres/
-  psycopg2 has no stated convention for what a naive value it receives or
-  returns means — something in that path is silently treating UTC as
-  local time (or vice versa) rather than preserving the instant. Found
-  2026-09-28 while building the frontend catches page; not fixed — the page
-  displays whatever comes back via `toLocaleString()`, so a user may see a
-  different wall-clock time than what they entered. Proper fix is likely
-  making the column timezone-aware (`DateTime(timezone=True)`) and being
-  explicit about UTC end-to-end, but that's a migration + backend change,
-  out of scope for a frontend PR.
+- **(Resolved 2026-09-28)** `POST /lure/` and `POST /catch/` now declare
+  `response_model=LureResponse`/`CatchResponse` + `status_code=201`,
+  matching `POST /auth/register`'s pattern. Also fixed: `CatchCreate
+  .date_caught`'s import-time default (now `Field(default_factory=lambda:
+  datetime.now(timezone.utc))`); `Lure.weight`/`size` now typed `float`
+  everywhere (dropped `Decimal`) so both endpoints serialize as JSON
+  numbers consistently; `Catch.date_caught` is now `DateTime(timezone=True)`
+  (migration `b671f9a295a9`), storing/reading UTC explicitly instead of a
+  naive column with no stated convention. Verified via curl against
+  `pesquei_test`: sending `date_caught: "...T11:30:00.000Z"` now round-trips
+  through `POST`/`GET /catch/` as `08:30:00-03:00` — the same instant,
+  explicitly offset-tagged, rather than a silently-shifted naive value.
+  **Fallout for whoever touches tests next**: 4 pre-existing tests in
+  `tests/test_catch.py` now fail because they compare the (now
+  timezone-aware) `row.date_caught`/response value against a naive
+  `datetime.fromisoformat(...)` — Python raises/mismatches on aware-vs-naive
+  comparison. These tests' own docstring/comments still reference the old
+  "known bug" as unfixed; both the comparisons and that comment need
+  updating (e.g. compare via `.astimezone(timezone.utc)` on both sides, or
+  assert equality of the resolved instant rather than the raw string).
+  `tests/test_lure.py`'s `Decimal(...)` comparisons were unaffected by the
+  `Lure.weight`/`size` float change (string-based `Decimal(str(x))`
+  comparison works either way).
 
 ## Decisions
 
@@ -224,6 +207,40 @@ reusable instead of re-deriving each session.
 ## Log
 
 <!-- Newest entries at the top. Format: `- YYYY-MM-DD: <what happened/learned, why it matters>` -->
+- 2026-09-28: **Fixed all four known backend bugs from STEPS.md step 8**
+  (`CatchCreate.date_caught` import-time default, `Catch.date_caught`
+  UTC-offset shift, missing `response_model`/`status_code` on `POST
+  /lure/`+`POST /catch/`, `Lure.weight`/`size` `Decimal`-vs-`float`
+  inconsistency) — see the (now-resolved, trimmed) Known issues entries
+  above for detail on each. New migration `b671f9a295a9` makes
+  `catch.date_caught` `TIMESTAMP WITH TIME ZONE`, using `AT TIME ZONE 'UTC'`
+  in the `USING` clause on both `upgrade`/`downgrade` so existing naive
+  values are reinterpreted as the UTC they were always meant to represent,
+  rather than relying on Postgres's session `timezone` GUC (the exact
+  ambiguity that caused the original bug). Chose `datetime.now(timezone
+  .utc)` (aware) over a bare `datetime.now()` (naive/local) for the new
+  `default_factory`, matching the aware-UTC convention `security.py`
+  already used for JWT `exp` — a naive default would have reintroduced the
+  same "no stated timezone convention" ambiguity bug #2 was fixing, just in
+  the default-value path instead of the column. One behavior worth
+  flagging: responses now show `date_caught` with the server's local
+  offset (e.g. `08:30:00-03:00`) rather than `Z`/`+00:00`, because Postgres
+  always converts `timestamptz` output to the connection's session
+  `timezone` GUC before returning it — this is still the *same instant* (any
+  correct ISO-8601 parser resolves it identically to the UTC value), just a
+  different display offset; flagging in case a future agent assumes the
+  API always emits `Z`. `pesquei_test`'s schema doesn't go through Alembic
+  at all (`tests/conftest.py` uses `Base.metadata.create_all(checkfirst=
+  True)` against `models.py` directly, and only ever *adds* missing tables)
+  — so verifying the column-type change there required a direct `ALTER
+  TABLE ... USING date_caught AT TIME ZONE 'UTC'` mirroring the migration,
+  not `alembic upgrade head`. Left that altered state in place afterward
+  since it now matches `models.py` and is what the next `pytest` run needs
+  anyway. Did **not** run `alembic upgrade head` against the real dev
+  database as part of this work — migrations exist in `alembic/versions/`
+  ready to apply, but landing them on `pesquei` (vs. just `pesquei_test`)
+  was left for whoever next runs the app against the real dev DB, per this
+  task's "never touch the real dev database" boundary.
 - 2026-09-28: **Built the first frontend (rough MVP): React + TypeScript +
   Vite, three pages.** Chose that stack deliberately (most common pairing
   with a FastAPI backend, plus a chance to pick up TypeScript). Built shared

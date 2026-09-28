@@ -90,6 +90,28 @@ def test_create_lure_without_auth_header_returns_401(client):
     assert r.status_code == 401
 
 
+def test_create_lure_returns_201_with_weight_and_size_as_json_numbers(client, make_user):
+    """`POST /lure/` declares `response_model=LureResponse, status_code=201`
+    (previously it had neither - see AGENTS.md's 2026-09-28 log entry) and
+    `weight`/`size` are now typed `float` (dropped `Decimal`), so both
+    should serialize as JSON numbers, matching `Catch`'s equivalent fields,
+    rather than the `Decimal`-as-JSON-string behavior Pydantic v2 used to
+    produce.
+    """
+    user = make_user()
+
+    payload = {"name": "Deep Diver", "weight": 12.5, "size": 3.5}
+
+    r = client.post("/lure/", json=payload, headers=user["headers"])
+
+    assert r.status_code == 201
+    body = r.json()
+    assert isinstance(body["weight"], float)
+    assert isinstance(body["size"], float)
+    assert body["weight"] == payload["weight"]
+    assert body["size"] == payload["size"]
+
+
 # ---------------------------------------------------------------------------
 # GET /lure/
 # ---------------------------------------------------------------------------
