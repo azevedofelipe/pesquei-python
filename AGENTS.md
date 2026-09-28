@@ -19,6 +19,45 @@ current.
 - For what's built / what's next, see `Pesquei_Backend_Roadmap.md` — this
   file is for *how* to work in this codebase, not the feature roadmap.
 
+## Agent pipeline
+
+Four custom subagents live in `.claude/agents/`, each scoped to one part of
+the pipeline. The orchestrating session (whoever's driving Claude Code
+directly with the user) dispatches to these rather than doing everything
+itself or using generic agents for specialized work:
+
+- **`backend-dev`** — FastAPI/SQLAlchemy/Alembic. Implements endpoints,
+  models, migrations. Self-verifies via curl against a `pesquei_test`-
+  pointed server. Doesn't write tests, doesn't touch git.
+- **`frontend-dev`** — React/TypeScript/Vite. Implements pages/components
+  against the `api.ts` contract. Self-verifies via `npm run build` +
+  curl (no browser access). Doesn't write tests, doesn't touch git.
+- **`qa-tester`** — pytest. Writes/runs tests using `tests/conftest.py`'s
+  fixtures, verifies persistence via `db_session`, confirms the full suite
+  still passes. Doesn't implement features, doesn't touch git.
+- **`release-manager`** — git/GitHub packaging. Takes verified work sitting
+  in the working tree, branches, commits, pushes, captures a real-browser
+  screenshot for user-facing changes, opens the PR, and *confirms CI
+  actually goes green* (not just that a PR exists). Never merges — that
+  stays a human decision.
+
+Typical flow for a feature that touches both ends: `backend-dev` builds the
+endpoint → `qa-tester` writes tests for it → `frontend-dev` builds the UI
+against it → `release-manager` packages the result into a PR. Steps can run
+in parallel when they don't depend on each other's output (e.g. `qa-tester`
+and `frontend-dev` can often start once `backend-dev` reports its endpoint
+contract, without waiting for each other). The orchestrating session is
+still responsible for deciding shared-infrastructure changes itself (e.g. a
+new pytest fixture everyone will use, a new `api.ts` export pattern) rather
+than delegating them, for the same reason `tests/conftest.py` and
+`frontend/src/api.ts` were built centrally rather than by parallel agents
+in the first place — shared foundations shouldn't be invented three times
+inconsistently.
+
+Added 2026-09-28 at the user's request, to make the agent-driven workflow
+this project already used ad hoc (see the Log entries below) into something
+reusable instead of re-deriving each session.
+
 ## Policy: tests and CI are mandatory
 
 - **Any agent that adds a new table, a new endpoint, or changes an existing
